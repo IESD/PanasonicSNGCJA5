@@ -44,6 +44,11 @@ PM5.0: byte 20 - byte 21
 PM7.5: byte 22 - byte 23
 PM10: byte 24 - byte 25
 '''
+STATUS_MASTER = "Sensor status"
+STATUS_BYTE_FIELDS=["Sensor status","PD Status","LD Status","Fan status"]
+STATUS_BITS_PER_FIELD = 2
+ADDRESS_STATUS_BYTE = 0x26
+
 
 # Total raw data length stored in sensor register, i.e. 26 bytes
 DATA_LENGTH_HEAD = ADDRESS_MASS_DENSITY_HEAD
@@ -69,6 +74,8 @@ class SNGCJA5:
         self.__particle_count_addresses = {pm_type: PARTICLE_COUNT_BLOCK_SIZE*order
                                             for order, pm_type in enumerate(PARTICLE_COUNT_PM_TYPES)}
 
+        self.__current_status = {STATUS_MASTER:0}
+
         self.__data = Queue(maxsize=20)
         self.__run()
 
@@ -93,7 +100,13 @@ class SNGCJA5:
         while True:
 
             try:
-                data = self.i2c_bus.read_i2c_block_data(self.i2c_address, DATA_LENGTH_HEAD, TOTAL_DATA_LENGTH)
+                status = self.i2c_bus.read_i2c_block_data(self.i2c_address,ADDRESS_STATUS_BYTE,1)
+                self.__current_status = {stat_name:status << STATUS_BITS_PER_FIELD*i for (i,stat_name) in enumerate(STATUS_BYTE_FIELDS)}
+                if (self.__current_status == 0):
+                    data = self.i2c_bus.read_i2c_block_data(self.i2c_address, DATA_LENGTH_HEAD, TOTAL_DATA_LENGTH)
+                else:
+                    if self.logger:
+                        self.logger.warning(f"Sensor status not OK - status values {self.__current_status}")
 
                 mass_density_data = self.get_mass_density_data(data[ADDRESS_MASS_DENSITY_HEAD:ADDRESS_MASS_DENSITY_TAIL+1])
                 particle_count_data = self.get_particle_count_data(data[ADDRESS_PARTICLE_COUNT_HEAD:ADDRESS_PARTICLE_COUNT_TAIL+1])
