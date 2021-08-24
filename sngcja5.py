@@ -102,7 +102,7 @@ class SNGCJA5:
             try:
                 status = self.i2c_bus.read_i2c_block_data(self.i2c_address,ADDRESS_STATUS_BYTE,1)
                 self.__current_status = {stat_name:status[0] << STATUS_BITS_PER_FIELD*i for (i,stat_name) in enumerate(STATUS_BYTE_FIELDS)}
-                if (self.__current_status == 0):
+                if (self.__current_status[STATUS_MASTER] == 0):
                     data = self.i2c_bus.read_i2c_block_data(self.i2c_address, DATA_LENGTH_HEAD, TOTAL_DATA_LENGTH)
                 else:
                     if self.logger:
