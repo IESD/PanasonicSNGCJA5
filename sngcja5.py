@@ -102,8 +102,8 @@ class SNGCJA5:
                 for i in range(addresses[key][1]):
                     val = (data[i] << (8 * i) | val)
 
-                # Error has been noted where on certain reads all 1 bits are returned, this is a data error
-                if val == 2 ** addresses[key][1] - 1:
+                # Error has been noted where on certain reads all 1 bits are returned in highest byte, likely data error
+                if (val >> addresses[key][1]) & 0b11111111 == 0b11111111:
                     if self.logger:
                         self.logger.warning(f"Suspect erroneous value {key} : {val} - resetting to 0")
                     val = 0
