@@ -104,7 +104,8 @@ class SNGCJA5:
 
                 # Error has been noted where on certain reads all 1 bits are returned, this is a data error
                 if val == 2 ** addresses[key][1] - 1:
-                    self.logger.warning(f"Suspect erroneous value {key} : {val} - resetting to 0")
+                    if self.logger:
+                        self.logger.warning(f"Suspect erroneous value {key} : {val} - resetting to 0")
                     val = 0
                 return_dict[key] = val / divisor
 
