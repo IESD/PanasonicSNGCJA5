@@ -22,9 +22,7 @@ COUNTS_ADDRESSES = {
 STATUS_MASTER = "Sensor status"
 STATUS_BIT_MASK = 0b11
 STATUS_BYTE_FIELDS = {"Sensor status": 6, "PD Status": 4, "LD Status": 2, "Fan status": 0}
-STATUS_ADDRESS = {
-    "Sensor_Status": (0x26, 1)
-}
+STATUS_ADDRESS = (0x26, 1)
 
 COLLECTION_ADDRESSES = {
     "Densities": (0x00, 12),
@@ -80,7 +78,7 @@ class SNGCJA5:
         self.__current_status = {STATUS_MASTER: 0}
 
     def get_status(self):
-        status = self.__read_data(STATUS_ADDRESS)
+        status = self.__read_data(*STATUS_ADDRESS)
         return status[0]
 
     def get_mass_density_data(self) -> dict:
