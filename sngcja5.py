@@ -74,8 +74,11 @@ class SNGCJA5:
         try:
             self.i2c_bus = smbus.SMBus(i2c_bus_no)
         except OSError as e:
-            print("OSError")
-            print(e)
+            if self.logger:
+                self.logger.error(f"OSError on getting i2c_bus : {e}")
+            else:
+                print("OSError")
+                print(e)
 
         self.__current_status = {STATUS_MASTER:0}
 
@@ -93,15 +96,16 @@ class SNGCJA5:
         retval = {}
         for key in addresses:
             data = self.__read_data(*addresses[key])
-            val = 0
-            for i in range(addresses[key][1]):
-                val = (data[i] << (8*i) | val)
-
-            #Error has been noted where on certain reads all 1 bits are returned, this is a data error
-            if val == 2**addreses[key][1] - 1:
-                self.logger.warn(f"Suspect erroneous value {key} : {val} - resetting to 0")
+            if data:
                 val = 0
-            retval[key] = val / divisor
+                for i in range(addresses[key][1]):
+                    val = (data[i] << (8*i) | val)
+
+                #Error has been noted where on certain reads all 1 bits are returned, this is a data error
+                if val == 2**addreses[key][1] - 1:
+                    self.logger.warn(f"Suspect erroneous value {key} : {val} - resetting to 0")
+                    val = 0
+                retval[key] = val / divisor
 
         return retval
 
@@ -115,7 +119,6 @@ class SNGCJA5:
                     self.logger.warning(f"{type(e).__name__}: {e}")
                 else:
                     print(f"{type(e).__name__}: {e}")
-
         if self.logger:
             self.logger.warn(f"Non-zero status returned : {status}")
         return None
