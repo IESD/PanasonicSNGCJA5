@@ -1,8 +1,5 @@
-import sys
 import logging
 import smbus
-from time import sleep
-from datetime import datetime
 
 # Parameters for each data address in the format Label : (Start address, data length in bytes)
 DENSITY_ADDRESSES = {
@@ -24,14 +21,14 @@ COUNTS_ADDRESSES = {
 
 STATUS_MASTER = "Sensor status"
 STATUS_BIT_MASK = 0b11
-STATUS_BYTE_FIELDS={"Sensor status":6,"PD Status":4,"LD Status":2,"Fan status":0]
+STATUS_BYTE_FIELDS = {"Sensor status": 6, "PD Status": 4, "LD Status": 2, "Fan status": 0}
 STATUS_ADDRESS = {
     "Sensor_Status": (0x26, 1)
 }
 
 COLLECTION_ADDRESSES = {
-    "Densities": (0x00,12),
-    "Counts": (0x0c,14),
+    "Densities": (0x00, 12),
+    "Counts": (0x0c, 14),
     "All_data": (0x00, 26)
 }
 
@@ -66,7 +63,7 @@ PM10: byte 24 - byte 25
 
 class SNGCJA5:
 
-    def __init__(self, i2c_bus_no:int, logger:str=None):
+    def __init__(self, i2c_bus_no: int, logger: str = None):
         self.logger = None
         if logger:
             self.logger = logging.getLogger(logger)
@@ -80,45 +77,45 @@ class SNGCJA5:
                 print("OSError")
                 print(e)
 
-        self.__current_status = {STATUS_MASTER:0}
+        self.__current_status = {STATUS_MASTER: 0}
 
     def get_status(self):
         status = self.__read_data(STATUS_ADDRESS)
         return status[0]
 
     def get_mass_density_data(self) -> dict:
-        return get_data_collection(DENSITY_ADDRESSES, DENSITY_DIVISOR)
+        return self.get_data_collection(DENSITY_ADDRESSES, DENSITY_DIVISOR)
 
     def get_particle_count_data(self) -> dict:
-        return get_data_collection(COUNTS_ADDRESSES)
+        return self.get_data_collection(COUNTS_ADDRESSES)
 
-    def get_data_collection(self, addresses:dict, divisor = 1):
-        retval = {}
+    def get_data_collection(self, addresses: dict, divisor=1):
+        return_dict = {}
         for key in addresses:
             data = self.__read_data(*addresses[key])
             if data:
                 val = 0
                 for i in range(addresses[key][1]):
-                    val = (data[i] << (8*i) | val)
+                    val = (data[i] << (8 * i) | val)
 
-                #Error has been noted where on certain reads all 1 bits are returned, this is a data error
-                if val == 2**addreses[key][1] - 1:
-                    self.logger.warn(f"Suspect erroneous value {key} : {val} - resetting to 0")
+                # Error has been noted where on certain reads all 1 bits are returned, this is a data error
+                if val == 2 ** addresses[key][1] - 1:
+                    self.logger.warning(f"Suspect erroneous value {key} : {val} - resetting to 0")
                     val = 0
-                retval[key] = val / divisor
+                return_dict[key] = val / divisor
 
-        return retval
+        return return_dict
 
-    def __read_data(self,start,length):
+    def __read_data(self, start, length):
         status = self.get_status()
         if status == 0:
             try:
-                return self.i2c_bus.read_i2c_block_data(self.i2c_address,start,length)
+                return self.i2c_bus.read_i2c_block_data(self.i2c_address, start, length)
             except Exception as e:
                 if self.logger:
                     self.logger.warning(f"{type(e).__name__}: {e}")
                 else:
                     print(f"{type(e).__name__}: {e}")
         if self.logger:
-            self.logger.warn(f"Non-zero status returned : {status}")
+            self.logger.warning(f"Non-zero status returned : {status}")
         return None
