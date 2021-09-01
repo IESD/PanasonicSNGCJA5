@@ -117,5 +117,5 @@ class SNGCJA5:
                 else:
                     print(f"{type(e).__name__}: {e}")
         if self.logger:
-            self.logger.warning(f"Non-zero status returned : {status}")
+            self.logger.warning(f"Non-zero SNGCJA5 status returned : {status}")
         return None
