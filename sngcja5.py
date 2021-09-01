@@ -89,6 +89,12 @@ class SNGCJA5:
 
     def get_data_collection(self, addresses: dict, divisor=1):
         return_dict = {}
+        status = self.get_status()
+        if status > 0:
+            if self.logger:
+                self.logger.warning(f"SNGCJA5 status non zero value : {status}.  Returning empty data")
+            return {}
+
         for key in addresses:
             data = self.__read_data(*addresses[key])
             if data:
@@ -105,15 +111,11 @@ class SNGCJA5:
         return return_dict
 
     def __read_data(self, start, length):
-        status = self.get_status()
-        if status == 0:
-            try:
-                return self.i2c_bus.read_i2c_block_data(self.i2c_address, start, length)
-            except Exception as e:
-                if self.logger:
-                    self.logger.warning(f"{type(e).__name__}: {e}")
-                else:
-                    print(f"{type(e).__name__}: {e}")
-        if self.logger:
-            self.logger.warning(f"Non-zero SNGCJA5 status returned : {status}")
+        try:
+            return self.i2c_bus.read_i2c_block_data(self.i2c_address, start, length)
+        except Exception as e:
+            if self.logger:
+                self.logger.warning(f"{type(e).__name__}: {e}")
+            else:
+                print(f"{type(e).__name__}: {e}")
         return None
