@@ -1,17 +1,40 @@
 import sys
 import logging
-import threading
 import smbus
 from time import sleep
-from queue import Queue
 from datetime import datetime
 
+# Parameters for each data address in the format Label : (Start address, data length in bytes)
+DENSITY_ADDRESSES = {
+    "PM1.0": (0x00, 4),
+    "PM2.5": (0x04, 4),
+    "PM10": (0x08, 4)
+}
 
-MASS_DENSITY_PM_TYPES = ["pm1.0", "pm2.5", "pm10"]
-MASS_DENSITY_BLOCK_SIZE = 4
-ADDRESS_MASS_DENSITY_HEAD = 0
-ADDRESS_MASS_DENSITY_TAIL = 11
-ADDRESS_MASS_DENSITY_LENGTH = (ADDRESS_MASS_DENSITY_TAIL - ADDRESS_MASS_DENSITY_HEAD) + 1
+DENSITY_DIVISOR = 1000
+
+COUNTS_ADDRESSES = {
+    "PM0.5": (0x0c, 2),
+    "PM1.0": (0x0e, 2),
+    "PM2.5": (0x10, 2),
+    "PM5": (0x14, 2),
+    "PM7.5": (0x16, 2),
+    "PM10": (0x18, 2)
+}
+
+STATUS_MASTER = "Sensor status"
+STATUS_BIT_MASK = 0b11
+STATUS_BYTE_FIELDS={"Sensor status":6,"PD Status":4,"LD Status":2,"Fan status":0]
+STATUS_ADDRESS = {
+    "Sensor_Status": (0x26, 1)
+}
+
+COLLECTION_ADDRESSES = {
+    "Densities": (0x00,12),
+    "Counts": (0x0c,14),
+    "All_data": (0x00, 26)
+}
+
 '''
 Address register of mass density values is started from 0 (0x00) to 11 (0x0B).
 Size of each value block is 4 bytes (32 bits) 
@@ -24,11 +47,6 @@ PM2.5: byte 4 - byte 7
 PM10: byte 8 - byte 11
 '''
 
-PARTICLE_COUNT_PM_TYPES = ["pm0.5", "pm1.0", "pm2.5", "N/A", "pm5.0", "pm7.5", "pm10"]
-PARTICLE_COUNT_BLOCK_SIZE = 2
-ADDRESS_PARTICLE_COUNT_HEAD = 12
-ADDRESS_PARTICLE_COUNT_TAIL = 25
-ADDRESS_PARTICLE_COUNT_LENGTH = (ADDRESS_PARTICLE_COUNT_TAIL - ADDRESS_PARTICLE_COUNT_HEAD) + 1
 '''
 Address register of particle count values is started from 12 (0x0C) to 25 (0x19)
 Size of each value block is 2 bytes (16 bits)
@@ -44,16 +62,6 @@ PM5.0: byte 20 - byte 21
 PM7.5: byte 22 - byte 23
 PM10: byte 24 - byte 25
 '''
-STATUS_MASTER = "Sensor status"
-STATUS_BYTE_FIELDS=["Sensor status","PD Status","LD Status","Fan status"]
-STATUS_BITS_PER_FIELD = 2
-ADDRESS_STATUS_BYTE = 0x26
-
-
-# Total raw data length stored in sensor register, i.e. 26 bytes
-DATA_LENGTH_HEAD = ADDRESS_MASS_DENSITY_HEAD
-DATA_LENGTH_TAIL = ADDRESS_PARTICLE_COUNT_TAIL
-TOTAL_DATA_LENGTH = ADDRESS_MASS_DENSITY_LENGTH + ADDRESS_PARTICLE_COUNT_LENGTH
 
 
 class SNGCJA5:
@@ -68,91 +76,46 @@ class SNGCJA5:
         except OSError as e:
             print("OSError")
             print(e)
-        self.__mass_density_addresses = {pm_type: MASS_DENSITY_BLOCK_SIZE*order 
-                                            for order, pm_type in enumerate(MASS_DENSITY_PM_TYPES)}
-
-        self.__particle_count_addresses = {pm_type: PARTICLE_COUNT_BLOCK_SIZE*order
-                                            for order, pm_type in enumerate(PARTICLE_COUNT_PM_TYPES)}
 
         self.__current_status = {STATUS_MASTER:0}
 
-        self.__data = Queue(maxsize=20)
-        self.__run()
+    def get_status(self):
+        status = self.__read_data(STATUS_ADDRESS)
+        return status[0]
 
-    def get_mass_density_data(self, data:list) -> dict:
+    def get_mass_density_data(self) -> dict:
+        return get_data_collection(DENSITY_ADDRESSES, DENSITY_DIVISOR)
 
-        return {pm_type: 
-            float((data[address+3] << 24 | 
-                data[address+2] << 16 | 
-                data[address+1] << 8 | 
-                data[address]) / 1000) 
-                for pm_type, address in self.__mass_density_addresses.items()}
+    def get_particle_count_data(self) -> dict:
+        return get_data_collection(COUNTS_ADDRESSES)
 
-    def get_particle_count_data(self, data:list) -> dict:
+    def get_data_collection(self, addresses:dict, divisor = 1):
+        retval = {}
+        for key in addresses:
+            data = self.__read_data(*addresses[key])
+            val = 0
+            for i in range(addresses[key][1]):
+                val = (data[i] << (8*i) | val)
 
-        return {pm_type: 
-            float((data[address+1] << 8 | data[address])) 
-                for pm_type, address in self.__particle_count_addresses.items()
-                if pm_type != "N/A"}
+            #Error has been noted where on certain reads all 1 bits are returned, this is a data error
+            if val == 2**addreses[key][1] - 1:
+                self.logger.warn(f"Suspect erroneous value {key} : {val} - resetting to 0")
+                val = 0
+            retval[key] = val / divisor
 
-    def __read_sensor_data(self) -> None:
+        return retval
 
-        while True:
-
+    def __read_data(self,start,length):
+        status = self.get_status()
+        if status == 0:
             try:
-                status = self.i2c_bus.read_i2c_block_data(self.i2c_address,ADDRESS_STATUS_BYTE,1)
-                self.__current_status = {stat_name:status[0] << STATUS_BITS_PER_FIELD*i for (i,stat_name) in enumerate(STATUS_BYTE_FIELDS)}
-                if (self.__current_status[STATUS_MASTER] == 0):
-                    data = self.i2c_bus.read_i2c_block_data(self.i2c_address, DATA_LENGTH_HEAD, TOTAL_DATA_LENGTH)
-                else:
-                    if self.logger:
-                        self.logger.warning(f"Sensor status not OK - status values {self.__current_status}")
-
-                mass_density_data = self.get_mass_density_data(data[ADDRESS_MASS_DENSITY_HEAD:ADDRESS_MASS_DENSITY_TAIL+1])
-                particle_count_data = self.get_particle_count_data(data[ADDRESS_PARTICLE_COUNT_HEAD:ADDRESS_PARTICLE_COUNT_TAIL+1])
-
-                if self.__data.full():
-                    self.__data.get()
-
-                self.__data.put({
-                    "sensor_data": {
-                        "mass_density": mass_density_data,
-                        "particle_count": particle_count_data,
-                        "mass_density_unit": "ug/m3",
-                        "particle_count_unit": "none"
-                    },
-                    "timestamp": int(datetime.now().timestamp())
-                })
-
-            except KeyboardInterrupt:
-                sys.exit()
-
-            except OSError as e:
-                if self.logger:
-                    self.logger.warning(f"{type(e).__name__}: {e}")
-                    self.logger.warning("Sensor is not detected on I2C bus. Terminating...")
-                else:
-                    print(f"{type(e).__name__}: {e}")
-                    print("Sensor is not detected on I2C bus. Terminating...")
-
-                sys.exit(1)
-
+                return self.i2c_bus.read_i2c_block_data(self.i2c_address,start,length)
             except Exception as e:
                 if self.logger:
                     self.logger.warning(f"{type(e).__name__}: {e}")
                 else:
                     print(f"{type(e).__name__}: {e}")
 
-            finally:
-                # Data is updated by sensor every 1 second as per specification. 
-                # 1-second delay is added to compensate data duplication
-                sleep(1) 
-
-    def get_measurement(self) -> dict:
-        if self.__data.empty():
-            return {}
-
-        return self.__data.get()
-
-    def __run(self):
-        threading.Thread(target=self.__read_sensor_data, daemon=True).start()
+        if self.logger:
+            self.logger.warn(f"Non-zero status returned : {status}")
+        return None
