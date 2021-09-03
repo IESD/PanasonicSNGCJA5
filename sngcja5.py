@@ -103,11 +103,12 @@ class SNGCJA5:
                     val = (data[i] << (8 * i) | val)
 
                 # Error has been noted where on certain reads all 1 bits are returned in highest byte, likely data error
-                if (val >> (addresses[key][1]-1)*8) & 0b11111111 == 0b11111111:
+                if (val > (addresses[key][1]-1)*8) & 0b11111111 == 0b11111111:
                     if self.logger:
-                        self.logger.warning(f"Suspect erroneous value {key} : {val} - resetting to 0")
-                    val = 0
-                return_dict[key] = val / divisor
+                        self.logger.warning(f"Suspect erroneous value {key} : {val} - resetting to None")
+                    return_dict[key] = None
+                else:
+                    return_dict[key] = val / divisor
 
         return return_dict
 
